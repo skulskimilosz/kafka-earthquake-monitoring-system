@@ -1,3 +1,4 @@
+requests
 websocket-client
 kafka-python-ng
 pyspark==3.5.0

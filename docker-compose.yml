@@ -1,7 +1,6 @@
-version: '3.8'
 services:
   kafka:
-    image: bitnami/kafka:3.7.0
+    image: bitnamilegacy/kafka:3.7.0
     container_name: kafka
     ports:
       - "9092:9092"
