@@ -3,7 +3,7 @@ import os
 import time
 import requests
 import websocket
-from kafka import KafkaProducer
+from kafka import KafkaProducer # type: ignore
 from datetime import datetime, timedelta
 from requests.exceptions import RequestException
 
