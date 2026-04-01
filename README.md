@@ -5,7 +5,7 @@ Strumieniowy system przetwarzania danych sejsmicznych oparty o Apache Kafka i Sp
 ## Opis projektu
 
 Projekt dostarcza pipeline danych, ktory integruje pobieranie zdarzen sejsmicznych, ich niezawodny transport i przetwarzanie do formatu analitycznego.
-Rozwiazanie zostalo zaprojektowane z mysla o monitoringu operacyjnym i dalszej warstwie prezentacji (dashboard).
+Rozwiazanie zostalo zaprojektowane jako podstawa aplikacji alertowej dla biura turystycznego, z dashboardem i warstwa prezentacji oparta o Streamlit.
 
 ## Kontekst portfolio
 
@@ -14,7 +14,7 @@ Repozytorium prezentuje podejscie do budowy systemu data engineering end-to-end:
 - ingestion danych z API i WebSocket,
 - transport i buforowanie zdarzen w Kafka,
 - przetwarzanie strumieniowe w Spark Structured Streaming,
-- zapis do warstwy analitycznej (Parquet) gotowej pod dashboard. (in progress)
+- zapis do warstwy analitycznej (Parquet) gotowej pod dashboard i system alertow.
 
 ## Cel biznesowy
 
@@ -23,9 +23,10 @@ Celem biznesowym projektu jest:
 - pobiera dane o trzesieniach ziemi w czasie zblizonym do rzeczywistego,
 - normalizacja i przygotowanie danych do analityki,
 - utrzymanie stalego przeplywu danych do warstwy raportowej i wizualizacyjnej,
-- skraca czas od pojawienia sie zdarzenia do jego widocznosci w warstwie danych.
+- dostarczenie podstaw pod system alertow o trzesieniach ziemi dla biura turystycznego,
+- skracanie czasu od pojawienia sie zdarzenia do jego widocznosci w warstwie danych.
 
-Docelowym zastosowaniem jest monitoring operacyjny i analityka trendow sejsmicznych.
+Docelowym zastosowaniem jest aplikacja alertowa wspierajaca biuro turystyczne w monitoringu operacyjnym i analizie trendow sejsmicznych.
 
 ## Architektura i przeplyw danych
 
