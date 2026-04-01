@@ -1,69 +1,79 @@
 # Kafka Earthquake Monitoring System
 
-System do monitorowania trzesien ziemi oparty o Apache Kafka.
+Strumieniowy system przetwarzania danych sejsmicznych oparty o Apache Kafka i Spark Structured Streaming.
 
-## Aktualny stan projektu
+## Opis projektu
 
-- Ingestion: dziala producent EMSC z backfillem HTTP i strumieniem WebSocket.
-- Kafka: lokalny broker uruchamiany przez Docker Compose (KRaft, bez Zookeepera).
-- Dashboard i processing: katalogi przygotowane pod kolejne etapy rozwoju.
+Projekt dostarcza pipeline danych, ktory integruje pobieranie zdarzen sejsmicznych, ich niezawodny transport i przetwarzanie do formatu analitycznego.
+Rozwiazanie zostalo zaprojektowane z mysla o monitoringu operacyjnym i dalszej warstwie prezentacji (dashboard).
 
-## Struktura repozytorium
+## Kontekst portfolio
 
-```text
-.
-├── docker-compose.yml
-├── requirements.txt
-├── docs/
-│   ├── infrastructure.md
-│   └── ingestion.md
-└── src/
-	├── dashboard/
-	├── ingestion/
-	│   ├── emsc_producer.py
-	│   └── producer_test.py
-	└── processing/
-```
+Repozytorium prezentuje podejscie do budowy systemu data engineering end-to-end:
 
-## Wymagania
+- ingestion danych z API i WebSocket,
+- transport i buforowanie zdarzen w Kafka,
+- przetwarzanie strumieniowe w Spark Structured Streaming,
+- zapis do warstwy analitycznej (Parquet) gotowej pod dashboard. (in progress)
+
+## Cel biznesowy
+
+Celem biznesowym projektu jest:
+
+- pobiera dane o trzesieniach ziemi w czasie zblizonym do rzeczywistego,
+- normalizacja i przygotowanie danych do analityki,
+- utrzymanie stalego przeplywu danych do warstwy raportowej i wizualizacyjnej,
+- skraca czas od pojawienia sie zdarzenia do jego widocznosci w warstwie danych.
+
+Docelowym zastosowaniem jest monitoring operacyjny i analityka trendow sejsmicznych.
+
+## Architektura i przeplyw danych
+
+1. Producer [src/ingestion/emsc_producer.py](src/ingestion/emsc_producer.py) pobiera dane historyczne (HTTP) i live (WebSocket) z EMSC.
+2. Rekordy surowe sa publikowane do Kafka topic `earthquakes-raw`.
+3. Processor [src/processing/spark_processor.py](src/processing/spark_processor.py) konsumuje dane z Kafka, parsuje JSON i wykonuje transformacje.
+4. Wynik zapisywany jest do partycjonowanych plikow Parquet w katalogu danych projektowych.
+5. Dane sa przygotowane pod warstwe frontendowa (planowany Streamlit).
+
+## Zakres funkcjonalny (stan biezacy)
+
+- Ingestion: backfill + live stream sa zaimplementowane.
+- Kafka lokalnie: broker uruchamiany przez Docker Compose (KRaft).
+- Processing: Spark Structured Streaming zapisuje dane do Parquet.
+- Frontend: etap planowany (Streamlit).
+
+## Wymagania techniczne
 
 - Python 3.12+
+- Java 17 (zalecane dla `pyspark==3.5.0`)
 - Docker + Docker Compose
 
-## Szybki start
+Uwaga: Java 21+ moze powodowac bledy Spark (`JAVA_GATEWAY_EXITED` / `UnsupportedOperationException: getSubject is not supported`).
 
-1. Zainstaluj zaleznosci Pythona:
+## Dokumentacja
 
-```bash
-pip install -r requirements.txt
-```
+Pelna dokumentacja techniczna jest utrzymywana w katalogu [docs/README.md](docs/README.md).
 
-2. Uruchom Kafka:
+- [docs/commands.md](docs/commands.md): komendy developerskie (jedyne zrodlo komend operacyjnych).
+- [docs/kafka-python.md](docs/kafka-python.md): przeplyw danych end-to-end.
+- [docs/infrastructure.md](docs/infrastructure.md): konfiguracja Kafka i Docker Compose.
+- [docs/ingestion.md](docs/ingestion.md): szczegolowy opis warstwy ingestion.
+- [docs/processing.md](docs/processing.md): szczegolowy opis warstwy przetwarzania Spark.
 
-```bash
-docker compose up -d
-```
+## Onboarding (dla osoby poczatkujacej)
 
-3. Uruchom producent danych EMSC:
+1. Zapoznaj sie z [docs/commands.md](docs/commands.md), aby uruchomic i zatrzymac system lokalnie.
+2. Przeczytaj [docs/kafka-python.md](docs/kafka-python.md), aby zrozumiec przeplyw danych.
+3. Nastepnie przejdz do dokumentacji implementacyjnej: [docs/ingestion.md](docs/ingestion.md) i [docs/processing.md](docs/processing.md).
 
-```bash
-python src/ingestion/emsc_producer.py
-```
+## Uruchomienie
 
-## Konfiguracja ingestora
+Sekcja uruchomienia dla odbiorcy koncowego zostanie uzupelniona po wdrozeniu frontendu Streamlit.
 
-`src/ingestion/emsc_producer.py` obsluguje:
+Do prac developerskich obecnie wystarcza trzy kroki:
 
-- `KAFKA_BROKER` (domyslnie `localhost:9092`)
-- `KAFKA_TOPIC` (domyslnie `earthquakes-raw`)
+1. uruchomienie lokalnej Kafka,
+2. uruchomienie producenta ingestion,
+3. uruchomienie processora Spark.
 
-Przyklad uruchomienia z wlasna konfiguracja:
-
-```bash
-KAFKA_BROKER=localhost:9092 KAFKA_TOPIC=earthquakes-raw python src/ingestion/emsc_producer.py
-```
-
-## Dokumentacja szczegolowa
-
-- Ingestion: `docs/ingestion.md`
-- Infrastruktura Kafka: `docs/infrastructure.md`
+Szczegolowe komendy znajduja sie w [docs/commands.md](docs/commands.md).

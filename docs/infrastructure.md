@@ -1,82 +1,73 @@
-# Infrastruktura
+# Infrastruktura i konfiguracja Kafka
 
-Dokument opisuje aktualny plik `docker-compose.yml` i sposob uruchamiania lokalnego brokera Kafka.
+Dokument opisuje konfiguracje z `docker-compose.yml` i jej znaczenie dla calego przeplywu danych.
 
-## Cel pliku docker-compose.yml
+## Cel aktualnej infrastruktury
 
-- uruchamia pojedynczy broker Kafka lokalnie,
-- korzysta z trybu KRaft (bez Zookeepera),
-- utrzymuje dane w trwalym wolumenie `kafka_data`.
+- uruchomienie pojedynczego brokera Kafka lokalnie,
+- praca w trybie KRaft (bez Zookeepera),
+- utrzymanie trwalego storage przez wolumen Docker.
 
-## Aktualna konfiguracja Compose
+To minimalna, ale w pelni wystarczajaca konfiguracja developerska.
 
-### Usluga `kafka`
+## Szczegolowa analiza `docker-compose.yml`
 
-- obraz: `bitnamilegacy/kafka:3.7.0`
-- nazwa kontenera: `kafka`
-- port: `9092:9092`
-- wolumen danych: `kafka_data:/bitnami/kafka`
+### Usługa `kafka`
 
-### Najwazniejsze zmienne srodowiskowe
+- `image: bitnamilegacy/kafka:3.7.0`
+	Wersja brokera zgodna z obecnym stackiem projektu.
+- `container_name: kafka`
+	Stala nazwa kontenera, latwiejsza diagnostyka i logowanie.
+- `ports: "9092:9092"`
+	Broker dostepny lokalnie pod `localhost:9092`.
+- `volumes: kafka_data:/bitnami/kafka`
+	Trwale dane logu Kafki pomiedzy restartami kontenera.
 
-Tozsamosc i role:
+### Zmienne konfiguracji KRaft
 
 - `KAFKA_CFG_NODE_ID=1`
+	Identyfikator wezla brokera.
 - `KAFKA_CFG_PROCESS_ROLES=controller,broker`
+	Jeden proces pelni role kontrolera i brokera.
 - `KAFKA_KRAFT_CLUSTER_ID=abcdefghijklmnopqrstuv`
+	Id klastra KRaft.
 
-Kontroler KRaft:
+### Konfiguracja kontrolera
 
 - `KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093`
+	Definicja quorum kontrolera; jeden voter na porcie 9093.
 - `KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER`
+	Nazwa listenera przypisanego do komunikacji kontrolera.
 
-Listenery i siec:
+### Listenery i routing klientow
 
 - `KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093`
+	Broker slucha lokalnie na dwoch listenerach.
 - `KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092`
+	Adres zwracany klientom (producer/spark) do dalszej komunikacji.
 - `KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT`
+	Mapowanie nazw listenerow na protokoly.
 - `KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT`
+	Listener do komunikacji broker-broker (tu istotne glownie dla zgodnosci konfiguracji).
 - `ALLOW_PLAINTEXT_LISTENER=yes`
+	Jawne dopuszczenie ruchu plaintext w srodowisku developerskim.
 
-## Dlaczego advertised listeners sa krytyczne
+## Konfiguracja logiczna projektu
 
-Klient Kafka laczy sie na adres podany przez brokera w `KAFKA_CFG_ADVERTISED_LISTENERS`.
-W tym projekcie producer Python uruchamiany lokalnie oczekuje `localhost:9092`.
+- Topic surowych zdarzen: `earthquakes-raw`.
+- Producer publikuje zdarzenia z kluczem (`id` lub `unid`).
+- Spark czyta z tego samego topiku przez connector `spark-sql-kafka`.
 
-## Operacje dzienne
+## Operacje developerskie
 
-Uruchomienie brokera:
+Pelna lista komend operacyjnych dla autora jest utrzymywana w jednym miejscu:
+`docs/commands.md`.
 
-```bash
-docker compose up -d
-```
+## Najczestsze problemy i ich sens
 
-Status uslug:
-
-```bash
-docker compose ps
-```
-
-Podglad logow brokera:
-
-```bash
-docker compose logs -f kafka
-```
-
-Zatrzymanie kontenerow:
-
-```bash
-docker compose down
-```
-
-Pelne czyszczenie razem z danymi Kafka:
-
-```bash
-docker compose down -v
-```
-
-## Szybka diagnostyka
-
-1. Upewnij sie, ze kontener `kafka` jest w stanie `running`.
-2. Sprawdz logi i potwierdz, ze broker nasluchuje na porcie 9092.
-3. Zweryfikuj, czy producer ma zgodne `KAFKA_BROKER` (domyslnie `localhost:9092`).
+- Klient nie moze sie polaczyc z `localhost:9092`:
+	zwykle problem z kontenerem lub `ADVERTISED_LISTENERS`.
+- Spark widzi blad offsetow po resecie topicu:
+	checkpoint przechowuje stare offsety i wymaga odswiezenia.
+- Brak danych w Spark mimo pracy producenta:
+	sprawdz, czy producer i Spark czytaja/pisza ten sam topic.

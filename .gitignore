@@ -220,3 +220,7 @@ kafka-logs/
 .vscode/
 .cursorignore
 node_modules/
+
+# Spark Streaming specific
+checkpoints/
+spark-warehouse/

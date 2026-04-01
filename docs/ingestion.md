@@ -1,99 +1,133 @@
-# Ingestion
+# Ingestion: `emsc_producer.py` krok po kroku
 
-Ten dokument opisuje aktualny stan warstwy pobierania danych sejsmicznych.
+Ten dokument jest szczegolowym opisem dzialania `src/ingestion/emsc_producer.py`.
+Jego celem jest umozliwienie autorowi zrozumienia logiki niemal linia po linii.
 
-## Pliki
+## Rola pliku w architekturze
 
-- `src/ingestion/emsc_producer.py` - glowny producer do Kafka.
-- `src/ingestion/producer_test.py` - narzedzie diagnostyczne do testu polaczenia WebSocket.
+`emsc_producer.py` jest brama wejsciowa systemu.
 
-## Notatka o emsc_producer.py
+1. Pobiera dane historyczne (backfill) z EMSC HTTP API.
+2. Przechodzi na strumien live z EMSC WebSocket.
+3. Wysyla kazde zdarzenie jako JSON do topiku Kafka `earthquakes-raw`.
 
-`emsc_producer.py` realizuje dwa etapy ingestion:
+## Szczegolowa analiza kodu
 
-1. Backfill historyczny (HTTP)
-2. Strumien live (WebSocket)
+### 1) Importy
 
-### 1) Backfill historyczny
+- `json`, `os`, `time`: standardowe narzedzia do serializacji, konfiguracji i retry.
+- `requests`: HTTP backfill.
+- `websocket`: klient WebSocket dla live streamu.
+- `KafkaProducer` z `kafka`: publikacja zdarzen do brokera.
+- `datetime`, `timedelta`: wyliczanie okna czasowego dla backfillu.
+- `RequestException`: jawna obsluga bledow transportu HTTP.
 
-Funkcja `fetch_historical_data(hours=24)` pobiera zdarzenia z EMSC FDSNWS:
+### 2) Konfiguracja stale i zmienne srodowiskowe
 
-- endpoint: `https://www.seismicportal.eu/fdsnws/event/1/query?format=json`
-- okno czasowe: ostatnie `hours` godzin (domyslnie 24)
-- timeout zapytania HTTP: 15 sekund
-- obsluga bledow: RequestException, niepoprawny JSON, bledy krytyczne
+- `KAFKA_BROKER = os.getenv('KAFKA_BROKER', 'localhost:9092')`
+	Odczytuje adres brokera z ENV; fallback to lokalny broker.
+- `KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'earthquakes-raw')`
+	Pozwala przelaczac topic bez zmian w kodzie.
+- `HTTP_API_URL` to endpoint FDSNWS EMSC do pobran historycznych.
+- `WS_URL` to endpoint standing order WebSocket EMSC.
 
-Kazde zdarzenie z `features` trafia do `send_to_kafka(...)`.
+### 3) Konstrukcja `KafkaProducer`
 
-### 2) Strumien live
+Parametry sa kluczowe:
 
-Producer laczy sie z:
-
-- `wss://www.seismicportal.eu/standing_order/websocket`
-
-Przeplyw:
-
-- `on_message` parsuje ramke JSON
-- jezeli ramka ma klucz `data`, event jest wysylany do Kafka
-- obslugiwane sa bledy parsowania i bledy callbacku
-- `run_forever(ping_interval=30)` utrzymuje heartbeat
-
-### Kafka i serializacja
-
-Producer Kafka jest inicjalizowany z:
-
+- `bootstrap_servers=[KAFKA_BROKER]`
+	Adres brokera, do ktorego producer wysyla rekordy.
+- `value_serializer=lambda x: json.dumps(x).encode('utf-8')`
+	Kazdy obiekt Python -> tekst JSON -> bajty UTF-8.
+- `key_serializer=lambda x: str(x).encode('utf-8') if x is not None else None`
+	Klucz wiadomosci (`event_id`) jest serializowany jako bajty.
 - `acks='all'`
-- `value_serializer`: JSON -> UTF-8
-- `key_serializer`: bezpieczne `str(key).encode('utf-8')`
+	Broker potwierdza zapis dopiero po replikacyjnym quorum (najbezpieczniejszy tryb potwierdzen).
 
-Klucz wiadomosci:
+### 4) `fetch_historical_data(hours=24)`
 
-- preferowane `event.id`
-- fallback do `event.properties.unid`
+To faza cold-start, zeby pipeline nie startowal od pustego zbioru.
 
-Wysylka uzywa `future.add_errback(...)` do logowania bledow dostarczenia.
+Kroki funkcji:
 
-### Konfiguracja przez zmienne srodowiskowe
+1. Loguje start i liczbe godzin backfillu.
+2. Liczy `start_time = now_utc - hours` i konwertuje do ISO.
+3. Wysyla `GET` pod `HTTP_API_URL` z parametrem `starttime`.
+4. `response.raise_for_status()` wymusza blad dla HTTP 4xx/5xx.
+5. Parsuje JSON i pobiera `payload.get('features', [])`.
+6. Jesli `features` jest lista:
+	 wysyla kazdy event przez `send_to_kafka(event)`.
+7. Jesli payload ma inny ksztalt: loguje ostrzezenie.
 
-- `KAFKA_BROKER` (domyslnie `localhost:9092`)
-- `KAFKA_TOPIC` (domyslnie `earthquakes-raw`)
+Obsluga bledow:
 
-Przyklad:
+- `RequestException`: problemy sieciowe, timeouty, statusy HTTP.
+- `ValueError`: niepoprawny JSON.
+- `Exception`: bezpiecznik na nieoczekiwane przypadki.
 
-```bash
-KAFKA_BROKER=localhost:9092 KAFKA_TOPIC=earthquakes-raw python src/ingestion/emsc_producer.py
-```
+### 5) `send_to_kafka(event_data)`
 
-## Notatka o producer_test.py
+To centralna funkcja publikacji pojedynczego zdarzenia.
 
-`producer_test.py` sluzy do szybkiego potwierdzenia, ze:
+1. Wyznacza klucz zdarzenia:
+	 - najpierw `event_data['id']`,
+	 - fallback: `event_data['properties']['unid']`.
+2. Wywoluje `producer.send(KAFKA_TOPIC, key=event_id, value=event_data)`.
+3. Rejestruje `future.add_errback(...)`, aby logowac bledy dostarczenia asynchronicznego.
 
-- polaczenie WSS z EMSC dziala,
-- przychodza ramki JSON,
-- mozna odczytac podstawowe pola (magnituda i lokalizacja).
+Dlaczego klucz jest wazny:
 
-Skrypt:
+- Umozliwia bardziej stabilne partycjonowanie.
+- Pomaga identyfikowac duplikaty na dalszych etapach.
 
-- wlacza `websocket.enableTrace(True)` dla diagnostyki handshake,
-- loguje `on_error` i `on_close`,
-- nie publikuje do Kafka (to tylko test lacza i formatu danych).
+### 6) `on_message(ws, message)`
 
-## Typowy scenariusz uruchomienia
+Callback dla ramek WebSocket.
 
-1. Uruchom Kafka:
+1. Parsuje surowa ramke `json.loads(message)`.
+2. Sprawdza, czy ramka ma klucz `data`.
+3. Jesli tak, traktuje `raw_payload['data']` jako event i wysyla do Kafka.
+4. Loguje identyfikator zdarzenia dla obserwowalnosci.
 
-```bash
-docker compose up -d
-```
+Obsluga bledow:
 
-2. Przetestuj lacze EMSC (opcjonalnie):
+- `json.JSONDecodeError`: niepoprawna ramka.
+- `Exception`: kazdy inny blad callbacku.
 
-```bash
-python src/ingestion/producer_test.py
-```
+### 7) `on_open`, `on_error`, `on_close`
 
-3. Uruchom glowny producer:
+Pomocnicze callbacki statusowe:
 
-```bash
-python src/ingestion/emsc_producer.py
-```
+- `on_open`: potwierdza zestawienie polaczenia.
+- `on_error`: raportuje bledy transportu.
+- `on_close`: raportuje kod i powod zamkniecia sesji.
+
+### 8) Blok `if __name__ == "__main__":`
+
+To glowny runtime programu.
+
+Kolejnosc:
+
+1. `fetch_historical_data(hours=24)`
+	 Najpierw backfill, zeby uzupelnic brakujace zdarzenia z ostatnich 24h.
+2. `producer.flush()`
+	 Wymusza zapis wszystkich rekordow z backfillu przed przejsciem na live.
+3. Nieskonczona petla `while True`:
+	 - tworzy `websocket.WebSocketApp(...)` z callbackami,
+	 - uruchamia `run_forever(ping_interval=30)`,
+	 - przy wyjatku czeka 5 sekund i probuje ponownie.
+
+Efekt: proces jest samonaprawialny po chwilowych przerwach lacza.
+
+## Co warto monitorowac w praktyce
+
+- Czy Kafka przyjmuje rekordy (`kafka` kontener, logi brokera).
+- Czy endpointy EMSC odpowiadaja (HTTP i WSS).
+- Czy retry petli WebSocket nie wystepuje zbyt czesto.
+- Czy klucz `event_id` jest dostepny dla wiekszosci rekordow.
+
+## Powiazane dokumenty
+
+- `docs/processing.md`
+- `docs/infrastructure.md`
+- `docs/kafka-python.md`
