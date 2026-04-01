@@ -1,80 +1,80 @@
 # Kafka Earthquake Monitoring System
 
-Strumieniowy system przetwarzania danych sejsmicznych oparty o Apache Kafka i Spark Structured Streaming.
+A streaming seismic data processing system built with Apache Kafka and Spark Structured Streaming.
 
-## Opis projektu
+## Project Overview
 
-Projekt dostarcza pipeline danych, ktory integruje pobieranie zdarzen sejsmicznych, ich niezawodny transport i przetwarzanie do formatu analitycznego.
-Rozwiazanie zostalo zaprojektowane jako podstawa aplikacji alertowej dla biura turystycznego, z dashboardem i warstwa prezentacji oparta o Streamlit.
+The project provides a data pipeline that integrates seismic event ingestion, reliable transport, and processing into an analytics-ready format.
+The solution is designed as the foundation of an earthquake alert application for a travel agency, with a dashboard and presentation layer planned in Streamlit.
 
-## Kontekst portfolio
+## Portfolio Context
 
-Repozytorium prezentuje podejscie do budowy systemu data engineering end-to-end:
+This repository demonstrates an end-to-end data engineering approach:
 
-- ingestion danych z API i WebSocket,
-- transport i buforowanie zdarzen w Kafka,
-- przetwarzanie strumieniowe w Spark Structured Streaming,
-- zapis do warstwy analitycznej (Parquet) gotowej pod dashboard i system alertow.
+- ingestion from API and WebSocket,
+- transport and buffering in Kafka,
+- stream processing in Spark Structured Streaming,
+- writing to an analytics layer (Parquet) ready for dashboards and alerting.
 
-## Cel biznesowy
+## Business Goal
 
-Celem biznesowym projektu jest:
+The business objective of this project is to:
 
-- pobiera dane o trzesieniach ziemi w czasie zblizonym do rzeczywistego,
-- normalizacja i przygotowanie danych do analityki,
-- utrzymanie stalego przeplywu danych do warstwy raportowej i wizualizacyjnej,
-- dostarczenie podstaw pod system alertow o trzesieniach ziemi dla biura turystycznego,
-- skracanie czasu od pojawienia sie zdarzenia do jego widocznosci w warstwie danych.
+- ingest earthquake data in near real time,
+- normalize and prepare data for analytics,
+- maintain a continuous flow into reporting and visualization layers,
+- provide the foundation for an earthquake alert system for a travel agency,
+- reduce the time from event occurrence to data-layer visibility.
 
-Docelowym zastosowaniem jest aplikacja alertowa wspierajaca biuro turystyczne w monitoringu operacyjnym i analizie trendow sejsmicznych.
+The target outcome is an alerting application that helps a travel agency with operational monitoring and seismic trend analysis.
 
-## Architektura i przeplyw danych
+## Architecture and Data Flow
 
-1. Producer [src/ingestion/emsc_producer.py](src/ingestion/emsc_producer.py) pobiera dane historyczne (HTTP) i live (WebSocket) z EMSC.
-2. Rekordy surowe sa publikowane do Kafka topic `earthquakes-raw`.
-3. Processor [src/processing/spark_processor.py](src/processing/spark_processor.py) konsumuje dane z Kafka, parsuje JSON i wykonuje transformacje.
-4. Wynik zapisywany jest do partycjonowanych plikow Parquet w katalogu danych projektowych.
-5. Dane sa przygotowane pod warstwe frontendowa (planowany Streamlit).
+1. Producer [src/ingestion/emsc_producer.py](src/ingestion/emsc_producer.py) ingests historical (HTTP) and live (WebSocket) data from EMSC.
+2. Raw records are published to Kafka topic earthquakes-raw.
+3. Processor [src/processing/spark_processor.py](src/processing/spark_processor.py) consumes Kafka data, parses JSON, and applies transformations.
+4. Results are written to partitioned Parquet files in the project data layer.
+5. The resulting dataset is prepared for a frontend layer (planned Streamlit app).
 
-## Zakres funkcjonalny (stan biezacy)
+## Functional Scope (Current Status)
 
-- Ingestion: backfill + live stream sa zaimplementowane.
-- Kafka lokalnie: broker uruchamiany przez Docker Compose (KRaft).
-- Processing: Spark Structured Streaming zapisuje dane do Parquet.
-- Frontend: etap planowany (Streamlit).
+- Ingestion: backfill + live stream implemented.
+- Local Kafka: broker runs via Docker Compose (KRaft).
+- Processing: Spark Structured Streaming writes data to Parquet.
+- Frontend: planned (Streamlit).
 
-## Wymagania techniczne
+## Technical Requirements
 
 - Python 3.12+
-- Java 17 (zalecane dla `pyspark==3.5.0`)
+- Java 17 (recommended for `pyspark==3.5.0`)
 - Docker + Docker Compose
 
-Uwaga: Java 21+ moze powodowac bledy Spark (`JAVA_GATEWAY_EXITED` / `UnsupportedOperationException: getSubject is not supported`).
+Note: Java 21+ may cause Spark failures (`JAVA_GATEWAY_EXITED` / `UnsupportedOperationException: getSubject is not supported`).
 
-## Dokumentacja
+## Documentation
 
-Pelna dokumentacja techniczna jest utrzymywana w katalogu [docs/README.md](docs/README.md).
+Full technical documentation is maintained in [docs/README.md](docs/README.md).
 
-- [docs/commands.md](docs/commands.md): komendy developerskie (jedyne zrodlo komend operacyjnych).
-- [docs/kafka-python.md](docs/kafka-python.md): przeplyw danych end-to-end.
-- [docs/infrastructure.md](docs/infrastructure.md): konfiguracja Kafka i Docker Compose.
-- [docs/ingestion.md](docs/ingestion.md): szczegolowy opis warstwy ingestion.
-- [docs/processing.md](docs/processing.md): szczegolowy opis warstwy przetwarzania Spark.
+- [docs/commands.md](docs/commands.md): developer commands (single source of operational commands).
+- [docs/kafka-python.md](docs/kafka-python.md): end-to-end data flow.
+- [docs/infrastructure.md](docs/infrastructure.md): Kafka and Docker Compose configuration.
+- [docs/ingestion.md](docs/ingestion.md): detailed ingestion layer walkthrough.
+- [docs/processing.md](docs/processing.md): detailed Spark processing layer walkthrough.
 
-## Onboarding (dla osoby poczatkujacej)
+## Onboarding (Beginner Path)
 
-1. Zapoznaj sie z [docs/commands.md](docs/commands.md), aby uruchomic i zatrzymac system lokalnie.
-2. Przeczytaj [docs/kafka-python.md](docs/kafka-python.md), aby zrozumiec przeplyw danych.
-3. Nastepnie przejdz do dokumentacji implementacyjnej: [docs/ingestion.md](docs/ingestion.md) i [docs/processing.md](docs/processing.md).
+1. Start with [docs/commands.md](docs/commands.md) to run and stop the system locally.
+2. Read [docs/kafka-python.md](docs/kafka-python.md) to understand the data flow.
+3. Continue with implementation details in [docs/ingestion.md](docs/ingestion.md) and [docs/processing.md](docs/processing.md).
 
-## Uruchomienie
+## Running the Project
 
-Sekcja uruchomienia dla odbiorcy koncowego zostanie uzupelniona po wdrozeniu frontendu Streamlit.
+The end-user run section will be finalized after the Streamlit frontend is implemented.
 
-Do prac developerskich obecnie wystarcza trzy kroki:
+For development, the pipeline currently requires three steps:
 
-1. uruchomienie lokalnej Kafka,
-2. uruchomienie producenta ingestion,
-3. uruchomienie processora Spark.
+1. start local Kafka,
+2. start the ingestion producer,
+3. start the Spark processor.
 
-Szczegolowe komendy znajduja sie w [docs/commands.md](docs/commands.md).
+Detailed commands are available in [docs/commands.md](docs/commands.md).

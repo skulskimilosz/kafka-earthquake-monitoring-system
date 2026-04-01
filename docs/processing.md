@@ -1,36 +1,36 @@
-# Processing: `spark_processor.py` krok po kroku
+# Processing: `spark_processor.py` Step by Step
 
-Ten dokument opisuje szczegolowo `src/processing/spark_processor.py`.
-Jest przeznaczony glownie dla autora projektu, aby latwo przechodzic przez logike transformacji linia po linii.
+This document provides a detailed walkthrough of `src/processing/spark_processor.py`.
+It is intended primarily for the author to follow the transformation logic line by line.
 
-## Rola pliku w architekturze
+## File Role in the Architecture
 
-`spark_processor.py` jest warstwa przetwarzania strumieniowego.
+`spark_processor.py` is the stream processing layer.
 
-1. Czyta surowe rekordy JSON z Kafki.
-2. Parsuje je do schematu Spark SQL.
-3. Normalizuje i wzbogaca dane o pola partycjonujace.
-4. Zapisuje dane do Parquet.
-5. Utrzymuje checkpoint offsetow dla restartow.
+1. Reads raw JSON records from Kafka.
+2. Parses them into a Spark SQL schema.
+3. Normalizes and enriches records with partition fields.
+4. Writes output to Parquet.
+5. Maintains checkpointed offsets for restart continuity.
 
-## Szczegolowa analiza kodu
+## Detailed Code Analysis
 
-### 1) Importy Spark
+### 1) Spark Imports
 
-- `SparkSession`: konfiguracja i start sesji.
+- `SparkSession`: session configuration and lifecycle.
 - `col`, `from_json`, `to_timestamp`, `year`, `month`, `dayofmonth`:
-  funkcje transformacji kolumn.
+  DataFrame transformation functions.
 - `StructType`, `StructField`, `StringType`, `DoubleType`:
-  definicja schematu danych przy parsowaniu JSON.
+  schema definition for JSON parsing.
 
 ### 2) `json_schema`
 
-Zdefiniowany jest schemat odpowiadajacy rekordowi wysylanemu przez producenta.
+The schema matches the event structure produced by ingestion.
 
-Pola:
+Fields:
 
 - `id` (String)
-- `properties` (obiekt):
+- `properties` (object):
   - `mag` (Double)
   - `flynn_region` (String)
   - `time` (String)
@@ -38,64 +38,64 @@ Pola:
   - `lat` (Double)
   - `unid` (String)
 
-Dlaczego schema jest jawna:
+Why explicit schema helps:
 
-- przyspiesza i stabilizuje parsowanie,
-- pozwala wykryc niespojne rekordy,
-- upraszcza dalsze transformacje.
+- improves parsing reliability,
+- catches inconsistent records earlier,
+- simplifies downstream transformations.
 
-### 3) Tworzenie sesji Spark
+### 3) Spark Session Initialization
 
-`SparkSession.builder` ustawia:
+`SparkSession.builder` sets:
 
 - `appName("EMSC-Spark-Streaming")`
 - `spark.jars.packages = org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0`
 
-Druga opcja dolacza connector Kafka dla Spark 3.5.0.
+The second option loads the Kafka connector for Spark 3.5.0.
 
-`spark.sparkContext.setLogLevel("WARN")` ogranicza szum logow.
+`spark.sparkContext.setLogLevel("WARN")` reduces log noise.
 
-### 4) Odczyt streamu z Kafki
+### 4) Reading the Kafka Stream
 
 `df = spark.readStream.format("kafka") ... .load()`
 
-Najwazniejsze opcje:
+Key options:
 
 - `kafka.bootstrap.servers = localhost:9092`
 - `subscribe = earthquakes-raw`
 - `startingOffsets = earliest`
 
-Znaczenie `earliest`:
+Meaning of `earliest`:
 
-- przy pierwszym starcie procesor czyta od najstarszych dostepnych rekordow,
-- przy kolejnych restartach checkpoint ma priorytet nad tym ustawieniem.
+- on first run, processing starts from the oldest available records,
+- on subsequent restarts, checkpoint state takes precedence.
 
-### 5) Transformacja `processed_df`
+### 5) `processed_df` Transformations
 
-Kroki transformacji:
+Transformation steps:
 
 1. `selectExpr("CAST(value AS STRING)")`
-   Konwersja bajtow Kafka value do tekstu JSON.
+   Converts Kafka byte payload to JSON text.
 2. `from_json(col("value"), json_schema).alias("data")`
-   Parsowanie JSON do struktury zgodnej ze schema.
+   Parses JSON using the predefined schema.
 3. `select("data.properties.*")`
-   Wejscie bezposrednio do `properties`.
+   Projects directly into `properties` fields.
 4. `withColumnRenamed("flynn_region", "place")`
-   Ujednolicenie nazwy pola lokalizacji.
+   Standardizes location field name.
 5. `withColumn("timestamp", to_timestamp(col("time")))`
-   Zamiana tekstu czasu na typ timestamp Spark.
-6. Dodanie kolumn partycji:
+   Converts textual time into Spark timestamp.
+6. Adds partition columns:
    - `year(timestamp)`
    - `month(timestamp)`
    - `dayofmonth(timestamp)`
 
-Efekt: DataFrame gotowy do zapisu analitycznego.
+Result: a DataFrame ready for analytics storage.
 
-### 6) Glowne zapytanie zapisu
+### 6) Main Write Query
 
 `query = processed_df.writeStream ... .start()`
 
-Parametry:
+Parameters:
 
 - `format("parquet")`
 - `path = data/processed_events`
@@ -103,44 +103,44 @@ Parametry:
 - `partitionBy("year", "month", "day")`
 - `outputMode("append")`
 
-Znaczenie:
+Why this setup:
 
-- Parquet daje wydajny format kolumnowy pod analityke.
-- Partycje po dacie upraszczaja filtrowanie i skanowanie danych.
-- Checkpoint zapisuje postep streamingu (offsety + metadata).
+- Parquet is efficient for analytical reads.
+- Date partitions improve filtering and scan performance.
+- Checkpointing stores stream progress (offsets + metadata).
 
-### 7) Debug query do konsoli
+### 7) Optional Console Debug Query
 
-Drugie zapytanie (`debug_query`) jest tylko pomocnicze i domyslnie wylaczone.
-Mozna je wlaczyc przez ustawienie `ENABLE_CONSOLE_DEBUG = True`.
+The secondary `debug_query` is optional and disabled by default.
+You can enable it by setting `ENABLE_CONSOLE_DEBUG = True`.
 
 - `format("console")`
 - `truncate = false`
 
-To ulatwia szybkie sprawdzenie, czy transformacje daja oczekiwany wynik, ale nie jest czescia docelowej architektury.
+It is useful for quick validation during debugging, but it is not part of the target architecture.
 
-Docelowo warstwa prezentacji ma byc obsluzona przez Streamlit, wiec terminalowy debug pozostaje tylko opcja pomocnicza.
+The final presentation layer is planned in Streamlit, so console output remains a temporary auxiliary option.
 
 ### 8) `query.awaitTermination()`
 
-Proces przechodzi w tryb stalego dzialania i slucha nowych rekordow.
-Skrypt konczy sie dopiero po zatrzymaniu procesu.
+The process stays active and continuously listens for new records.
+The script exits only when the process is stopped.
 
-## Jak czytac output pipeline'u
+## Reading Pipeline Output
 
-Po zapisach pojawiaja sie katalogi:
+After writes, directories are created in the form:
 
 - `data/processed_events/year=YYYY/month=M/day=D/...parquet`
 
-To finalna warstwa danych dla dashboardu i analiz.
+This is the final data layer for dashboards and analysis.
 
-## Ryzyka i uwagi eksploatacyjne
+## Risks and Operational Notes
 
-- Usuniecie/reset topicu Kafka przy starym checkpoint moze powodowac bledy offsetow.
-- Zmiana schematu eventu EMSC wymaga aktualizacji `json_schema`.
-- Java 17 jest zalecana dla stabilnosci `pyspark==3.5.0`.
+- Topic reset/recreation with an old checkpoint may cause offset errors.
+- Changes in EMSC event structure require `json_schema` updates.
+- Java 17 is recommended for stable `pyspark==3.5.0` execution.
 
-## Powiazane dokumenty
+## Related Documents
 
 - `docs/ingestion.md`
 - `docs/infrastructure.md`

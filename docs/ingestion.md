@@ -1,132 +1,131 @@
-# Ingestion: `emsc_producer.py` krok po kroku
+# Ingestion: `emsc_producer.py` Step by Step
 
-Ten dokument jest szczegolowym opisem dzialania `src/ingestion/emsc_producer.py`.
-Jego celem jest umozliwienie autorowi zrozumienia logiki niemal linia po linii.
+This document is a detailed walkthrough of `src/ingestion/emsc_producer.py`.
+Its purpose is to help the author understand the logic almost line by line.
 
-## Rola pliku w architekturze
+## File Role in the Architecture
 
-`emsc_producer.py` jest brama wejsciowa systemu.
+`emsc_producer.py` is the system entry point.
 
-1. Pobiera dane historyczne (backfill) z EMSC HTTP API.
-2. Przechodzi na strumien live z EMSC WebSocket.
-3. Wysyla kazde zdarzenie jako JSON do topiku Kafka `earthquakes-raw`.
+1. It fetches historical data (backfill) from the EMSC HTTP API.
+2. It switches to the live EMSC WebSocket stream.
+3. It sends each event as JSON to Kafka topic `earthquakes-raw`.
 
-## Szczegolowa analiza kodu
+## Detailed Code Analysis
 
-### 1) Importy
+### 1) Imports
 
-- `json`, `os`, `time`: standardowe narzedzia do serializacji, konfiguracji i retry.
-- `requests`: HTTP backfill.
-- `websocket`: klient WebSocket dla live streamu.
-- `KafkaProducer` z `kafka`: publikacja zdarzen do brokera.
-- `datetime`, `timedelta`: wyliczanie okna czasowego dla backfillu.
-- `RequestException`: jawna obsluga bledow transportu HTTP.
+- `json`, `os`, `time`: standard tools for serialization, configuration, and retry handling.
+- `requests`: HTTP backfill requests.
+- `websocket`: WebSocket client for live stream ingestion.
+- `KafkaProducer` from `kafka`: event publishing to broker.
+- `datetime`, `timedelta`: time window calculation for backfill.
+- `RequestException`: explicit HTTP transport error handling.
 
-### 2) Konfiguracja stale i zmienne srodowiskowe
+### 2) Constants and Environment Configuration
 
 - `KAFKA_BROKER = os.getenv('KAFKA_BROKER', 'localhost:9092')`
-	Odczytuje adres brokera z ENV; fallback to lokalny broker.
+  Reads broker address from ENV; fallback is local broker.
 - `KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'earthquakes-raw')`
-	Pozwala przelaczac topic bez zmian w kodzie.
-- `HTTP_API_URL` to endpoint FDSNWS EMSC do pobran historycznych.
-- `WS_URL` to endpoint standing order WebSocket EMSC.
+  Allows topic switching without code changes.
+- `HTTP_API_URL` is the EMSC FDSNWS endpoint for historical data.
+- `WS_URL` is the EMSC standing-order WebSocket endpoint.
 
-### 3) Konstrukcja `KafkaProducer`
+### 3) `KafkaProducer` Construction
 
-Parametry sa kluczowe:
+Key parameters:
 
 - `bootstrap_servers=[KAFKA_BROKER]`
-	Adres brokera, do ktorego producer wysyla rekordy.
+  Broker address used by the producer.
 - `value_serializer=lambda x: json.dumps(x).encode('utf-8')`
-	Kazdy obiekt Python -> tekst JSON -> bajty UTF-8.
+  Converts Python objects -> JSON text -> UTF-8 bytes.
 - `key_serializer=lambda x: str(x).encode('utf-8') if x is not None else None`
-	Klucz wiadomosci (`event_id`) jest serializowany jako bajty.
+  Serializes event keys (`event_id`) into bytes.
 - `acks='all'`
-	Broker potwierdza zapis dopiero po replikacyjnym quorum (najbezpieczniejszy tryb potwierdzen).
+  Broker acknowledges write only after quorum durability.
 
 ### 4) `fetch_historical_data(hours=24)`
 
-To faza cold-start, zeby pipeline nie startowal od pustego zbioru.
+This is the cold-start phase, so the pipeline does not start with empty data.
 
-Kroki funkcji:
+Function steps:
 
-1. Loguje start i liczbe godzin backfillu.
-2. Liczy `start_time = now_utc - hours` i konwertuje do ISO.
-3. Wysyla `GET` pod `HTTP_API_URL` z parametrem `starttime`.
-4. `response.raise_for_status()` wymusza blad dla HTTP 4xx/5xx.
-5. Parsuje JSON i pobiera `payload.get('features', [])`.
-6. Jesli `features` jest lista:
-	 wysyla kazdy event przez `send_to_kafka(event)`.
-7. Jesli payload ma inny ksztalt: loguje ostrzezenie.
+1. Logs start and requested backfill window.
+2. Computes `start_time = now_utc - hours` and converts to ISO format.
+3. Sends `GET` to `HTTP_API_URL` with `starttime` parameter.
+4. Uses `response.raise_for_status()` for HTTP 4xx/5xx failures.
+5. Parses JSON and reads `payload.get('features', [])`.
+6. If `features` is a list:
+   sends each event via `send_to_kafka(event)`.
+7. If payload shape differs:
+   logs a warning.
 
-Obsluga bledow:
+Error handling:
 
-- `RequestException`: problemy sieciowe, timeouty, statusy HTTP.
-- `ValueError`: niepoprawny JSON.
-- `Exception`: bezpiecznik na nieoczekiwane przypadki.
+- `RequestException`: network, timeout, and HTTP transport issues.
+- `ValueError`: invalid JSON body.
+- `Exception`: fallback guard for unexpected failures.
 
 ### 5) `send_to_kafka(event_data)`
 
-To centralna funkcja publikacji pojedynczego zdarzenia.
+Core function for publishing a single event.
 
-1. Wyznacza klucz zdarzenia:
-	 - najpierw `event_data['id']`,
-	 - fallback: `event_data['properties']['unid']`.
-2. Wywoluje `producer.send(KAFKA_TOPIC, key=event_id, value=event_data)`.
-3. Rejestruje `future.add_errback(...)`, aby logowac bledy dostarczenia asynchronicznego.
+1. Resolves event key:
+   - first `event_data['id']`,
+   - fallback `event_data['properties']['unid']`.
+2. Calls `producer.send(KAFKA_TOPIC, key=event_id, value=event_data)`.
+3. Registers `future.add_errback(...)` for async delivery failure logging.
 
-Dlaczego klucz jest wazny:
+Why the key matters:
 
-- Umozliwia bardziej stabilne partycjonowanie.
-- Pomaga identyfikowac duplikaty na dalszych etapach.
+- improves partition consistency,
+- helps identify duplicates downstream.
 
 ### 6) `on_message(ws, message)`
 
-Callback dla ramek WebSocket.
+WebSocket frame callback.
 
-1. Parsuje surowa ramke `json.loads(message)`.
-2. Sprawdza, czy ramka ma klucz `data`.
-3. Jesli tak, traktuje `raw_payload['data']` jako event i wysyla do Kafka.
-4. Loguje identyfikator zdarzenia dla obserwowalnosci.
+1. Parses incoming frame with `json.loads(message)`.
+2. Checks whether the frame contains `data`.
+3. If yes, treats `raw_payload['data']` as event and sends to Kafka.
+4. Logs event identifier for observability.
 
-Obsluga bledow:
+Error handling:
 
-- `json.JSONDecodeError`: niepoprawna ramka.
-- `Exception`: kazdy inny blad callbacku.
+- `json.JSONDecodeError`: invalid frame payload.
+- `Exception`: any other callback error.
 
 ### 7) `on_open`, `on_error`, `on_close`
 
-Pomocnicze callbacki statusowe:
+Auxiliary connection callbacks:
 
-- `on_open`: potwierdza zestawienie polaczenia.
-- `on_error`: raportuje bledy transportu.
-- `on_close`: raportuje kod i powod zamkniecia sesji.
+- `on_open`: confirms successful WebSocket connection.
+- `on_error`: logs transport-level errors.
+- `on_close`: logs status code and close message.
 
-### 8) Blok `if __name__ == "__main__":`
+### 8) `if __name__ == "__main__":` Runtime Block
 
-To glowny runtime programu.
-
-Kolejnosc:
+Main runtime sequence:
 
 1. `fetch_historical_data(hours=24)`
-	 Najpierw backfill, zeby uzupelnic brakujace zdarzenia z ostatnich 24h.
+   Runs backfill first to include the latest 24h events.
 2. `producer.flush()`
-	 Wymusza zapis wszystkich rekordow z backfillu przed przejsciem na live.
-3. Nieskonczona petla `while True`:
-	 - tworzy `websocket.WebSocketApp(...)` z callbackami,
-	 - uruchamia `run_forever(ping_interval=30)`,
-	 - przy wyjatku czeka 5 sekund i probuje ponownie.
+   Ensures all backfill records are delivered before live streaming starts.
+3. Infinite `while True` loop:
+   - creates `websocket.WebSocketApp(...)` with callbacks,
+   - runs `run_forever(ping_interval=30)`,
+   - on failure waits 5 seconds and retries.
 
-Efekt: proces jest samonaprawialny po chwilowych przerwach lacza.
+Result: the process self-recovers after temporary connection interruptions.
 
-## Co warto monitorowac w praktyce
+## What to Monitor in Practice
 
-- Czy Kafka przyjmuje rekordy (`kafka` kontener, logi brokera).
-- Czy endpointy EMSC odpowiadaja (HTTP i WSS).
-- Czy retry petli WebSocket nie wystepuje zbyt czesto.
-- Czy klucz `event_id` jest dostepny dla wiekszosci rekordow.
+- Whether Kafka accepts records (`kafka` container and broker logs).
+- Whether EMSC endpoints respond (HTTP and WSS).
+- Whether WebSocket retry loops happen too frequently.
+- Whether `event_id` is present for most records.
 
-## Powiazane dokumenty
+## Related Documents
 
 - `docs/processing.md`
 - `docs/infrastructure.md`

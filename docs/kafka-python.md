@@ -1,87 +1,86 @@
-# Przeplyw danych i Kafka w projekcie
+# Data Flow and Kafka in This Project
 
-Ten dokument opisuje caly przeplyw danych od EMSC do warstwy Parquet oraz role Kafki.
+This document explains the full path of data from EMSC to the Parquet layer and Kafka's role in the architecture.
 
-## End-to-end: od zrodla do warstwy danych
+## End-to-End: Source to Data Layer
 
 1. EMSC HTTP API (backfill)
-    Producer pobiera historie zdarzen z ostatnich 24 godzin.
+   Producer retrieves event history for the last 24 hours.
 2. EMSC WebSocket (live)
-    Producer odbiera nowe zdarzenia na biezaco.
+   Producer receives new events in near real time.
 3. Kafka topic `earthquakes-raw`
-    Kazde zdarzenie trafia jako JSON (wartosc) + klucz (`id`/`unid`).
+   Each event is published as JSON value + key (`id`/`unid`).
 4. Spark Structured Streaming
-    Odczyt z Kafki, parsowanie JSON i transformacje.
+   Reads from Kafka, parses JSON, and applies transformations.
 5. Parquet `data/processed_events`
-    Dane analityczne partycjonowane po `year/month/day`.
+   Analytics-ready data partitioned by `year/month/day`.
 6. Checkpoint `checkpoints/spark_earthquakes`
-    Stan streamingu i offsetow dla restartow.
+   Stores streaming progress and offsets for restarts.
 
-## Co Kafka daje w tej architekturze
+## What Kafka Provides in This Architecture
 
-- Rozsprzezenie miedzy ingestion i processing.
-- Buforowanie, gdy Spark chwilowo nie konsumuje.
-- Trwalosc i porzadek offsetow dla przetwarzania strumieniowego.
-- Mozliwosc podpiecia kolejnych konsumentow (np. alerting, ML, frontend API).
+- decoupling between ingestion and processing,
+- buffering when Spark is temporarily slower,
+- durable offset ordering for stream processing,
+- ability to add additional consumers (e.g., alerting, ML, frontend API).
 
-## Jak producer publikuje rekord
+## How the Producer Publishes a Record
 
-W `emsc_producer.py`:
+In `emsc_producer.py`:
 
 - `topic`: `earthquakes-raw`
-- `key`: `event.id` lub `event.properties.unid`
-- `value`: caly event JSON
-- `acks='all'`: bezpieczniejsze potwierdzenia zapisu
+- `key`: `event.id` or `event.properties.unid`
+- `value`: full event JSON
+- `acks='all'`: stronger write acknowledgement guarantees
 
-Dlaczego klucz jest przydatny:
+Why the key is useful:
 
-- stabilizuje przypisanie do partycji,
-- upraszcza deduplikacje downstream.
+- stabilizes partition assignment,
+- helps with downstream deduplication.
 
-## Jak Spark konsumuje rekord
+## How Spark Consumes a Record
 
-W `spark_processor.py`:
+In `spark_processor.py`:
 
 - source: `.format("kafka")`
 - bootstrap: `localhost:9092`
 - subscribe: `earthquakes-raw`
 - start offset: `earliest`
 
-Spark czyta `value` jako bajty, konwertuje na `STRING`, potem `from_json(...)` na schema DataFrame.
+Spark reads `value` as bytes, casts it to `STRING`, then parses with `from_json(...)` into a DataFrame schema.
 
-## Transformacje i model danych
+## Transformations and Data Model
 
-Spark wyciaga `data.properties.*`, czyli m.in.:
+Spark selects `data.properties.*`, including:
 
 - `mag`
-- `flynn_region` (zmieniane na `place`)
-- `time` (konwersja do `timestamp`)
+- `flynn_region` (renamed to `place`)
+- `time` (converted to `timestamp`)
 - `lon`, `lat`
 - `unid`
 
-Nastepnie dokladane sa kolumny partycjonujace:
+Then partition columns are added:
 
 - `year`
 - `month`
 - `day`
 
-## Zapis i semantyka restartu
+## Write Path and Restart Semantics
 
-Zapytanie streamingu:
+Streaming query settings:
 
-- zapis do Parquet,
+- write to Parquet,
 - `outputMode("append")`,
-- `checkpointLocation` ustawione.
+- `checkpointLocation` enabled.
 
-Przy restarcie Spark korzysta z checkpointu i kontynuuje od zapamietanych offsetow.
-Jesli topic zostanie zresetowany/rekreowany, checkpoint moze byc niespojny z Kafka i wymagac odswiezenia.
+On restart, Spark resumes from checkpointed offsets.
+If the topic is reset/recreated, checkpoints can become inconsistent and may require reset.
 
-## Diagram logiczny
+## Logical Diagram
 
 ```text
 EMSC HTTP (backfill) -----\
-                                    >---- emsc_producer.py ----> Kafka: earthquakes-raw ----> spark_processor.py ----> Parquet
+                           >---- emsc_producer.py ----> Kafka: earthquakes-raw ----> spark_processor.py ----> Parquet
 EMSC WebSocket (live) ----/                                  |                                   |
-                                                                                    +-- klucz: id/unid                 +-- checkpoint offsetow
+                                                               +-- key: id/unid                   +-- offset checkpoint
 ```
-

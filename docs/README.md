@@ -1,39 +1,39 @@
-# Dokumentacja projektu
+# Project Documentation
 
-To jest centralny punkt dokumentacji projektu.
-Wszystkie opisy architektury, kodu i przeplywu danych sa utrzymywane w katalogu `docs/`.
+This is the central entry point for project documentation.
+All architecture, code, and data-flow descriptions are maintained in the `docs/` directory.
 
-Dokumentacja jest zorganizowana tak, aby jednoczesnie wspierac:
+The documentation is structured to support both:
 
-- szybkie wdrozenie osoby nowej do projektu,
-- poglebiona analize implementacji dla autora i zespolu technicznego.
+- quick onboarding for new readers,
+- deep implementation analysis for the author and technical team.
 
-## Czy to jest przytlaczajace?
+## Is It Overwhelming?
 
-Dla osoby poczatkujacej: tak, moze byc.
-Dlatego dokumentacja jest podzielona na 2 sciezki czytania: szybka (zrozumienie systemu) i poglebiona (zrozumienie implementacji).
+For beginners, it can be.
+That is why the docs are split into two reading paths: quick orientation and deep technical detail.
 
-## Sciezka dla poczatkujacego (15-25 min)
+## Beginner Path (15-25 min)
 
 1. `../README.md`
-   Cel projektu, kontekst biznesowy i co system robi end-to-end.
+   Project goal, business context, and end-to-end system behavior.
 2. `commands.md`
-   Jak uruchomic, zatrzymac i diagnozowac system lokalnie.
+   How to run, stop, and troubleshoot the system locally.
 3. `kafka-python.md`
-   Przeplyw danych od EMSC do Parquet, bez wchodzenia w szczegoly kodu.
+   Data flow from EMSC to Parquet without deep code details.
 
-Po tej sciezce osoba zielona powinna rozumiec caly proces i zaleznosci miedzy komponentami.
+After this path, a beginner should understand the overall process and component dependencies.
 
-## Sciezka poglebiona dla autora (30-60 min)
+## Deep-Dive Path for the Author (30-60 min)
 
 1. `infrastructure.md`
-   Szczegoly konfiguracji brokera Kafka (Docker Compose, KRaft).
+   Detailed Kafka broker setup (Docker Compose, KRaft).
 2. `ingestion.md`
-   Dokladny opis `src/ingestion/emsc_producer.py`.
+   Detailed walkthrough of `src/ingestion/emsc_producer.py`.
 3. `processing.md`
-   Dokladny opis `src/processing/spark_processor.py`.
+   Detailed walkthrough of `src/processing/spark_processor.py`.
 
-## Pelna lista dokumentow
+## Full Document List
 
 1. `commands.md`
 2. `kafka-python.md`
@@ -41,15 +41,15 @@ Po tej sciezce osoba zielona powinna rozumiec caly proces i zaleznosci miedzy ko
 4. `ingestion.md`
 5. `processing.md`
 
-## Dla kogo jest ta dokumentacja
+## Who This Documentation Is For
 
-- Dla autora: szczegolowe wyjasnienie logiki i odpowiedzialnosci kazdego etapu pipeline'u.
-- Dla odbiorcy projektu: opis procesu, komponentow i zaleznosci potrzebnych do zrozumienia systemu.
+- Author: detailed explanation of logic and responsibilities in each pipeline stage.
+- Project audience: clear process and dependency overview needed to understand the system.
 
-## Zakres dokumentacji
+## Documentation Scope
 
-- Komendy operacyjne Bash dla codziennej pracy autora.
-- Architektura strumieniowa EMSC -> Kafka -> Spark -> Parquet.
-- Konfiguracja Kafki i uzasadnienie parametrow.
-- Transformacje danych oraz sposob partycjonowania.
-- Zachowanie systemu przy restarcie (checkpointy i offsety).
+- Bash operational commands for day-to-day development.
+- Streaming architecture: EMSC -> Kafka -> Spark -> Parquet.
+- Kafka configuration and parameter rationale.
+- Transformations and partitioning strategy.
+- Restart behavior (checkpoints and offsets).

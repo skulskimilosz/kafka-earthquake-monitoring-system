@@ -1,73 +1,73 @@
-# Infrastruktura i konfiguracja Kafka
+# Infrastructure and Kafka Configuration
 
-Dokument opisuje konfiguracje z `docker-compose.yml` i jej znaczenie dla calego przeplywu danych.
+This document explains the `docker-compose.yml` setup and its role in the end-to-end data flow.
 
-## Cel aktualnej infrastruktury
+## Purpose of the Current Infrastructure
 
-- uruchomienie pojedynczego brokera Kafka lokalnie,
-- praca w trybie KRaft (bez Zookeepera),
-- utrzymanie trwalego storage przez wolumen Docker.
+- run a single Kafka broker locally,
+- use KRaft mode (without Zookeeper),
+- keep persistent storage through a Docker volume.
 
-To minimalna, ale w pelni wystarczajaca konfiguracja developerska.
+This is a minimal but fully sufficient setup for local development.
 
-## Szczegolowa analiza `docker-compose.yml`
+## Detailed `docker-compose.yml` Breakdown
 
-### Usługa `kafka`
+### Service `kafka`
 
 - `image: bitnamilegacy/kafka:3.7.0`
-	Wersja brokera zgodna z obecnym stackiem projektu.
+  Broker image version aligned with the current project stack.
 - `container_name: kafka`
-	Stala nazwa kontenera, latwiejsza diagnostyka i logowanie.
+  Stable container name for easier diagnostics and logs.
 - `ports: "9092:9092"`
-	Broker dostepny lokalnie pod `localhost:9092`.
+  Exposes the broker at `localhost:9092`.
 - `volumes: kafka_data:/bitnami/kafka`
-	Trwale dane logu Kafki pomiedzy restartami kontenera.
+  Persists Kafka log data across container restarts.
 
-### Zmienne konfiguracji KRaft
+### KRaft Configuration Variables
 
 - `KAFKA_CFG_NODE_ID=1`
-	Identyfikator wezla brokera.
+  Broker node identifier.
 - `KAFKA_CFG_PROCESS_ROLES=controller,broker`
-	Jeden proces pelni role kontrolera i brokera.
+  A single process acts as both controller and broker.
 - `KAFKA_KRAFT_CLUSTER_ID=abcdefghijklmnopqrstuv`
-	Id klastra KRaft.
+  KRaft cluster identifier.
 
-### Konfiguracja kontrolera
+### Controller Configuration
 
 - `KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093`
-	Definicja quorum kontrolera; jeden voter na porcie 9093.
+  Controller quorum definition; one voter on port 9093.
 - `KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER`
-	Nazwa listenera przypisanego do komunikacji kontrolera.
+  Listener name for controller communication.
 
-### Listenery i routing klientow
+### Listeners and Client Routing
 
 - `KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093`
-	Broker slucha lokalnie na dwoch listenerach.
+  Broker listens on two local listeners.
 - `KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092`
-	Adres zwracany klientom (producer/spark) do dalszej komunikacji.
+  Address announced to clients (producer/spark).
 - `KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT`
-	Mapowanie nazw listenerow na protokoly.
+  Maps listener names to protocols.
 - `KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT`
-	Listener do komunikacji broker-broker (tu istotne glownie dla zgodnosci konfiguracji).
+  Listener used for broker-to-broker communication.
 - `ALLOW_PLAINTEXT_LISTENER=yes`
-	Jawne dopuszczenie ruchu plaintext w srodowisku developerskim.
+  Explicitly allows plaintext traffic in a development environment.
 
-## Konfiguracja logiczna projektu
+## Logical Project Configuration
 
-- Topic surowych zdarzen: `earthquakes-raw`.
-- Producer publikuje zdarzenia z kluczem (`id` lub `unid`).
-- Spark czyta z tego samego topiku przez connector `spark-sql-kafka`.
+- Raw events topic: `earthquakes-raw`.
+- Producer publishes events with key (`id` or `unid`).
+- Spark reads from the same topic via `spark-sql-kafka` connector.
 
-## Operacje developerskie
+## Developer Operations
 
-Pelna lista komend operacyjnych dla autora jest utrzymywana w jednym miejscu:
+The full command list for daily operations is maintained in one place:
 `docs/commands.md`.
 
-## Najczestsze problemy i ich sens
+## Common Issues and Meaning
 
-- Klient nie moze sie polaczyc z `localhost:9092`:
-	zwykle problem z kontenerem lub `ADVERTISED_LISTENERS`.
-- Spark widzi blad offsetow po resecie topicu:
-	checkpoint przechowuje stare offsety i wymaga odswiezenia.
-- Brak danych w Spark mimo pracy producenta:
-	sprawdz, czy producer i Spark czytaja/pisza ten sam topic.
+- Client cannot connect to `localhost:9092`:
+  usually a container state problem or `ADVERTISED_LISTENERS` mismatch.
+- Spark reports offset errors after topic reset:
+  checkpoint stores stale offsets and must be refreshed.
+- No data in Spark while producer is running:
+  verify producer and Spark are using the same topic.

@@ -1,94 +1,94 @@
-# Komendy Bash dla autora
+# Bash Commands for the Author
 
-Ten plik zbiera w jednym miejscu komendy developerskie do codziennej pracy.
+This file centralizes development commands for day-to-day work.
 
 ## 1) Kafka (Docker Compose)
 
-Start brokera:
+Start broker:
 
 ```bash
 docker compose up -d
 ```
 
-Status kontenerow:
+Container status:
 
 ```bash
 docker compose ps
 ```
 
-Logi Kafki na zywo:
+Live Kafka logs:
 
 ```bash
 docker compose logs -f kafka
 ```
 
-Zatrzymanie kontenerow:
+Stop containers:
 
 ```bash
 docker compose down
 ```
 
-Zatrzymanie + usuniecie danych Kafki (reset lokalnego stanu):
+Stop + remove Kafka data (local state reset):
 
 ```bash
 docker compose down -v
 ```
 
-## 2) Producer EMSC (`emsc_producer.py`)
+## 2) EMSC Producer (`emsc_producer.py`)
 
-Uruchomienie (domyslna konfiguracja):
+Run (default configuration):
 
 ```bash
 python src/ingestion/emsc_producer.py
 ```
 
-Uruchomienie z konfiguracja ENV:
+Run with environment variables:
 
 ```bash
 KAFKA_BROKER=localhost:9092 KAFKA_TOPIC=earthquakes-raw python src/ingestion/emsc_producer.py
 ```
 
-Zatrzymanie producenta (gdy dziala w tle lub w innym terminalu):
+Stop producer (when running in background or another terminal):
 
 ```bash
 pkill -f "python src/ingestion/emsc_producer.py"
 ```
 
-## 3) Consumer/Processor Spark (`spark_processor.py`)
+## 3) Spark Consumer/Processor (`spark_processor.py`)
 
-Uruchomienie processora:
+Run processor:
 
 ```bash
 python src/processing/spark_processor.py
 ```
 
-Zatrzymanie processora (gdy dziala w tle lub w innym terminalu):
+Stop processor (when running in background or another terminal):
 
 ```bash
 pkill -f "python src/processing/spark_processor.py"
 ```
 
-## 4) Diagnostyka streamingu Spark
+## 4) Spark Streaming Diagnostics
 
-Podglad katalogu danych wyjsciowych:
+Inspect output directories:
 
 ```bash
 find data/processed_events -maxdepth 4 -type d | sort
 ```
 
-Podglad checkpointow:
+Inspect checkpoints:
 
 ```bash
 find checkpoints/spark_earthquakes -maxdepth 3 -type f | sort
 ```
 
-Reset checkpointu Spark (uwaga: utrata stanu offsetow):
+Reset Spark checkpoint (warning: offset state will be lost):
 
 ```bash
 rm -rf checkpoints/spark_earthquakes
 ```
 
-## 5) Typowa sekwencja start/stop
+## 5) Typical Start/Stop Sequence
 
 Start:
 
