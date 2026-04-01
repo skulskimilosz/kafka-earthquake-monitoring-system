@@ -1,6 +1,6 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, from_json, to_timestamp, year, month, dayofmonth
-from pyspark.sql.types import StructType, StructField, StringType, DoubleType
+from pyspark.sql import SparkSession #type: ignore
+from pyspark.sql.functions import col, from_json, to_timestamp, year, month, dayofmonth # type: ignore
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType # type: ignore
 
 # Schema for incoming Kafka messages.
 # The producer sends full event objects, and relevant fields are under `properties`.
